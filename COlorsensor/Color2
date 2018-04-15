@@ -1,0 +1,110 @@
+#include <Wire.h>
+#include "Adafruit_TCS34725.h"
+
+/* Example code for the Adafruit TCS34725 breakout library */
+
+/* Connect SCL    to analog 5
+   Connect SDA    to analog 4
+   Connect VDD    to 3.3V DC
+   Connect GROUND to common ground */
+
+/* Initialise with default values (int time = 2.4ms, gain = 1x) */
+// Adafruit_TCS34725 tcs = Adafruit_TCS34725();
+
+/* Initialise with specific int time and gain values */
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_1X);
+
+void setup(void) {
+  Serial.begin(115200);
+
+  if (tcs.begin()) {
+    Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1);
+  }
+  pinMode(8, OUTPUT);
+  // Now we're ready to get readings!
+}
+
+void loop(void) {
+  uint16_t r, g, b, c, colorTemp, lux;
+  static uint16_t finalR, finalG, finalB;
+  uint16_t rl, gl, bl, cl;
+  static int dr, dg, db, dc;
+  static boolean Inject = false, finish = false, gfinalG = false;
+  static unsigned long tInjection, TFinishBlue, TFinishGreen,TFinishRed, TtotalBlue = 0, TtotalGreen, TtotalRed, Tdelay;
+  static int rCount, bCount, gCount, dcount, count;
+
+  rl = r;
+  bl = b;
+  gl = g;
+  cl = c;
+  tcs.getRawData(&r, &g, &b, &c);
+  colorTemp = tcs.calculateColorTemperature(r, g, b);
+  lux = tcs.calculateLux(r, g, b);
+
+  dr = r - rl;
+  dg = g - gl;
+  db = b - bl;
+  dc = c - cl;
+ if(!Inject && (db < -15 || db > 15) && (dr < -15 || dr > 15))
+  {
+    if(dcount == 0)
+    {
+      tInjection = millis();
+      Tdelay = tInjection + 3000;
+    }
+    dcount ++;
+    if(dcount > 1)
+    {
+      Inject = true;
+    }
+  }else if (!Inject){
+    dcount = 0;
+  }
+  if(!Inject && colorTemp < 14000)
+  {
+    dcount = 0;
+  }
+
+  if(Inject && Tdelay > millis() && !gfinalG){
+    if(count == 0){
+      finalG = g + 200;
+      count++;
+    }else{
+      count ++;
+    }
+    if(count > 3){
+      gfinalG = true;
+    }
+  }else{
+    count = 0;
+  }
+  if( g > finalG && Inject && gfinalG)
+  {
+
+    if(bCount == 0){
+      TFinishGreen = millis();
+      gCount ++;
+    }else if (gCount > 4){
+      TtotalGreen = TFinishGreen - tInjection;
+      digitalWrite(8,HIGH);
+    }else{
+      bCount ++;
+    }
+  }
+  if (b < finalB && Inject){
+    bCount = 0;
+  }
+
+  Serial.print("Color Temp: "); Serial.print(colorTemp, DEC); Serial.print(" K - ");
+  Serial.print("Lux: "); Serial.print(lux, DEC); Serial.print(" - ");
+  Serial.print("R: "); Serial.print(r, DEC); Serial.print(" ");
+  Serial.print("G: "); Serial.print(g, DEC); Serial.print(" ");
+  Serial.print("B: "); Serial.print(b, DEC); Serial.print(" ");
+  Serial.print("C: "); Serial.print(c, DEC); Serial.print(" ");
+  Serial.print("     Injection: "); Serial.print(tInjection / 1000.0); Serial.print("      GreenEnd: "); Serial.print(finalG);
+  Serial.print("     Time: "); Serial.print(TtotalBlue / 1000.0);Serial.print("     EndTime: ");Serial.print(TFinishBlue / 1000.0);
+  Serial.println(" ");
+}
