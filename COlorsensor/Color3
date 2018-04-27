@@ -1,0 +1,139 @@
+#include <Wire.h>
+#include "Adafruit_TCS34725.h"
+
+/* Example code for the Adafruit TCS34725 breakout library */
+
+/* Connect SCL    to analog 5
+   Connect SDA    to analog 4
+   Connect VDD    to 3.3V DC
+   Connect GROUND to common ground */
+
+/* Initialise with default values (int time = 2.4ms, gain = 1x) */
+// Adafruit_TCS34725 tcs = Adafruit_TCS34725();
+
+/* Initialise with specific int time and gain values */
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_1X);
+
+void setup(void) {
+  Serial.begin(115200);
+
+  if (tcs.begin()) {
+    Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1);
+  }
+  pinMode(8, OUTPUT);
+  pinMode(A3, INPUT);
+  // Now we're ready to get readings!
+}
+
+void loop(void) {
+  uint16_t r, g, b, c, colorTemp, lux;
+  static uint16_t finalR, finalG, finalB;
+  uint16_t rl, gl, bl, cl;
+  static int dr, dg, db, dc;
+  static boolean Inject = false, finish = false, gfinalG = false;
+  static unsigned long tInjection,TGreenStart, TFinishBlue, TFinishGreen,TFinishRed, TtotalBlue = 0, TtotalGreen, TtotalRed, Tdelay; //Variables that record time
+  static int rCount, bCount, gCount, dcount, count;  //integer variables to count the amount of times color reaches end color in a row.
+  static int phase = 0; //Variable to control phase of car e.i injection phase = 0, run phase = 1, stop phase = 2.
+
+  rl = r;
+  bl = b;
+  gl = g;
+  cl = c;
+  tcs.getRawData(&r, &g, &b, &c);
+  colorTemp = tcs.calculateColorTemperature(r, g, b);
+  lux = tcs.calculateLux(r, g, b);
+
+  dr = r - rl;
+  dg = g - gl;
+  db = b - bl;
+  dc = c - cl;
+ if(!Inject && r < 250 && g < 250)
+  {
+    if(dcount == 0)
+    {
+      tInjection = millis();
+
+    }
+    dcount ++;
+    if(dcount > 1)
+    {
+      Inject = true;
+      //digitalWrite(8, HIGH);
+      //Tdelay = tInjection + 7500;
+      phase = 1;
+    }
+  }else if (!Inject){
+    dcount = 0;
+  }
+  if(Inject && g > 400 && phase == 1)
+  {
+    TGreenStart = millis();
+    phase = 2;
+  }
+  /*if(Inject && Tdelay < millis() && !gfinalG){
+    if(count == 0){
+      finalG = g + 75;
+      count++;
+    }else{
+      count ++;
+    }
+    if(count > 3){
+      gfinalG = true;
+    }
+  }else{
+    count = 0;
+  }*/
+  if( g > 490 && Inject && phase == 2)
+  {
+
+    if(gCount == 0){
+      TFinishGreen = millis();
+      gCount++;
+    }else if (gCount > 4){
+      TtotalGreen = TFinishGreen - TGreenStart;
+      phase = 3;
+      Serial.print("Stopping Reaction Finished");
+      //digitalWrite(8,LOW);
+    }else{
+      gCount ++;
+    }
+  }
+  if (g < 490 && Inject){
+    gCount = 0;
+  }
+
+  Serial.print("Color Temp: "); Serial.print(colorTemp, DEC); Serial.print(" K - ");
+  Serial.print("Lux: "); Serial.print(lux, DEC); Serial.print(" - ");
+  Serial.print("R: "); Serial.print(r, DEC); Serial.print(" ");
+  Serial.print("G: "); Serial.print(g, DEC); Serial.print(" ");
+  Serial.print("B: "); Serial.print(b, DEC); Serial.print(" ");
+  Serial.print("C: "); Serial.print(c, DEC); Serial.print(" ");
+  Serial.print("     Injection: "); Serial.print(tInjection / 1000.0);
+  Serial.print("     Time: "); Serial.print(millis() / 1000.0);
+  Serial.print("     StartTime: "); Serial.print(TGreenStart / 1000.0);
+  Serial.print("     EndTime: ");Serial.print(TtotalGreen / 1000.0);
+  Serial.println(" ");
+
+
+  //Code to determine wether the car is running and telling it when to stop
+  static unsigned long tCarStart; //time variable that records when the car started
+  static unsigned long tCarRunTime; //total time that the car has been running
+  static boolean hasCarStart; //Boolean telling wether the car has moved
+
+  if(phase > 1 && analogRead(A3) > 200 && !hasCarStart){
+    tCarStart = millis();
+    hasCarStart = true;
+  }
+  if (hasCarStart){
+    tCarRunTime = millis() - tCarStart;
+  }
+  if(phase == 3 && tCarRunTime > TtotalGreen){
+    digitalWrite(8, LOW);
+    Serial.print("Car Finished Running");
+  }else if(phase > 1){
+    digitalWrite(8, HIGH);
+  }
+}
